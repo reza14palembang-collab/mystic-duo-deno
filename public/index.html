@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Mystic Duo Online</title>
+  <style>
+    body{margin:0;background:#111;color:#fff;font-family:Segoe UI;text-align:center}
+    #game{width:800px;height:400px;background:#222;margin:auto;position:relative}
+    .player{width:40px;height:40px;position:absolute;border-radius:4px}
+    #p1{background:#4af;top:0;left:0}
+    #p2{background:#f4a;top:0;right:0}
+    .hp{position:absolute;top:-20px;left:0;font-size:12px}
+    #ui{margin-top:10px}
+    input,button{padding:6px 12px}
+  </style>
+</head>
+<body>
+  <div id="ui">
+    <input id="roomIn" placeholder="Room ID (kosongkan untuk baru)">
+    <button onclick="join()">Join / Buat Room</button>
+    <span id="info">Buat room & share ID ke teman!</span>
+  </div>
+  <div id="game">
+    <div id="p1" class="player"><div class="hp">100</div></div>
+    <div id="p2" class="player"><div class="hp">100</div></div>
+  </div>
+
+  <script>
+    let ws, myId = 1, roomId = '';
+    const keys = {};
+    document.onkeydown = e => keys[e.key] = true;
+    document.onkeyup = e => keys[e.key] = false;
+
+    function join() {
+      roomId = document.getElementById('roomIn').value || Math.random().toString(36).slice(2, 7);
+      const url = new URL(window.location.href);
+      ws = new WebSocket(`wss://${url.host}/ws?room=${roomId}`);
+      ws.onopen = () => console.log('WS connected');
+      ws.onmessage = (msg) => {
+        const data = JSON.parse(msg.data);
+        if (data.type === 'joined') {
+          myId = data.player;
+          document.getElementById('info').textContent = `Kamu Player ${myId} di room ${roomId}`;
+        }
+        if (data.type === 'move') {
+          const p = document.getElementById(data.player === 1 ? 'p2' : 'p1');
+          p.style.left = data.x + 'px';
+          p.style.top = data.y + 'px';
+        }
+        if (data.type === 'attack') {
+          const p = document.getElementById(data.player === 1 ? 'p2' : 'p1');
+          let hp = parseInt(p.querySelector('.hp').textContent);
+          hp = Math.max(0, hp - 10);
+          p.querySelector('.hp').textContent = hp;
+          if (hp === 0) alert(`Player ${data.player} menang!`);
+        }
+      };
+    }
+
+    // Game loop 60 FPS
+    setInterval(() => {
+      if (!ws || ws.readyState !== 1) return;
+      const me = document.getElementById(myId === 1 ? 'p1' : 'p2');
+      let x = parseInt(me.style.left) || 0;
+      let y = parseInt(me.style.top) || 0;
+      if (keys['a'] || keys['ArrowLeft']) x -= 5;
+      if (keys['d'] || keys['ArrowRight']) x += 5;
+      if (keys['w'] || keys['ArrowUp']) y -= 5;
+      if (keys['s'] || keys['ArrowDown']) y += 5;
+      x = Math.max(0, Math.min(760, x));
+      y = Math.max(0, Math.min(360, y));
+      me.style.left = x + 'px';
+      me.style.top = y + 'px';
+      ws.send(JSON.stringify({type:'move',x,y,player:myId}));
+
+      if (keys[' ']) {
+        ws.send(JSON.stringify({type:'attack',player:myId}));
+        keys[' '] = false;
+      }
+    }, 16);
+  </script>
+</body>
+</html>
