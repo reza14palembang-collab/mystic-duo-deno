@@ -1,4 +1,4 @@
-// main.ts - WebSocket server native Deno
+// main.ts - WebSocket native Deno (fix import)
 const rooms = new Map<string, WebSocket[]>();
 
 function handleWebSocket(ws: WebSocket, room: string) {
@@ -21,12 +21,12 @@ function handleWebSocket(ws: WebSocket, room: string) {
   };
 }
 
-// serve HTTP + upgrade WebSocket
-serve((req) => {
+// Export handler untuk Deno Deploy (TANPA serve)
+export default async (req: Request) => {
   const url = new URL(req.url);
   // static file
   if (url.pathname === "/" || url.pathname === "/index.html") {
-    return new Response(Deno.readTextFileSync("./public/index.html"), {
+    return new Response(await Deno.readTextFile("./public/index.html"), {
       headers: { "content-type": "text/html" }
     });
   }
@@ -38,4 +38,4 @@ serve((req) => {
     return response;
   }
   return new Response("Not Found", { status: 404 });
-}, { port: 8000 });
+};
