@@ -1,42 +1,41 @@
-import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
-import { acceptWebSocket, acceptable } from "https://deno.land/std@0.177.0/ws/mod.ts";
-
+// main.ts - WebSocket server native Deno
 const rooms = new Map<string, WebSocket[]>();
 
-async function reqHandler(req: Request) {
-  // serve static file
+function handleWebSocket(ws: WebSocket, room: string) {
+  if (!rooms.has(room)) rooms.set(room, []);
+  const socks = rooms.get(room)!;
+  if (socks.length >= 2) return ws.close(1000, "full");
+  socks.push(ws);
+  ws.onopen = () => {
+    ws.send(JSON.stringify({ type: "joined", player: socks.length }));
+    socks.forEach(s => s !== ws && s.send(JSON.stringify({ type: "ready" })));
+  };
+  ws.onmessage = (m) => {
+    const data = JSON.parse(m.data);
+    socks.forEach(s => s !== ws && s.send(JSON.stringify(data)));
+  };
+  ws.onclose = () => {
+    const idx = socks.indexOf(ws);
+    if (idx > -1) socks.splice(idx, 1);
+    if (socks.length === 0) rooms.delete(room);
+  };
+}
+
+// serve HTTP + upgrade WebSocket
+serve((req) => {
   const url = new URL(req.url);
+  // static file
   if (url.pathname === "/" || url.pathname === "/index.html") {
-    const html = await Deno.readTextFile("./public/index.html");
-    return new Response(html, { headers: { "content-type": "text/html" } });
+    return new Response(Deno.readTextFileSync("./public/index.html"), {
+      headers: { "content-type": "text/html" }
+    });
   }
   // WebSocket upgrade
-  if (req.headers.get("upgrade") === "websocket") {
-    const { socket, response } = await acceptWebSocket(req);
+  if (url.pathname === "/ws") {
     const room = url.searchParams.get("room") || "default";
-    if (!rooms.has(room)) rooms.set(room, []);
-    const socks = rooms.get(room)!;
-    if (socks.length >= 2) {
-      socket.close(1000, "full");
-      return response;
-    }
-    socks.push(socket);
-    socket.onopen = () => {
-      socket.send(JSON.stringify({ type: "joined", player: socks.length }));
-      socks.forEach((s) => s !== socket && s.send(JSON.stringify({ type: "ready" })));
-    };
-    socket.onmessage = (m) => {
-      const data = JSON.parse(m.data);
-      socks.forEach((s) => s !== socket && s.send(JSON.stringify(data)));
-    };
-    socket.onclose = () => {
-      const idx = socks.indexOf(socket);
-      if (idx > -1) socks.splice(idx, 1);
-      if (socks.length === 0) rooms.delete(room);
-    };
+    const { socket, response } = Deno.upgradeWebSocket(req);
+    handleWebSocket(socket, room);
     return response;
   }
   return new Response("Not Found", { status: 404 });
-}
-
-serve(reqHandler, { port: 8000 });
+}, { port: 8000 });
